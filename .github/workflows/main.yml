@@ -1,0 +1,71 @@
+name: Build Source Artifacts
+
+on: 
+  push:
+    branches:
+      - main
+
+
+env:
+  DOTNET_VERSION: '3.1.x'           # set this to the dot net version 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+    - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
+    - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
+    - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+    - name: Check out repository code
+      uses: actions/checkout@v2
+    - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
+    - run: echo "🖥️ The workflow is now ready to test your code on the runner."
+    - run: echo "🍏 This job's status is ${{ job.status }}."
+    - uses: actions/checkout@v2
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    #Load AdsGoFast Environment Variables
+    - name: Push Environment File Variables into GitHub compliant Env Variables
+      shell: pwsh
+      env:
+        ENVIRONMENT_NAME: ${{ secrets.ENVIRONMENT_NAME }}
+      run: |
+        . .\Steps\PushEnvFileIntoVariables.ps1
+        ParseEnvFile("$env:ENVIRONMENT_NAME")
+        Invoke-Expression -Command  ".\Steps\CD_SetResourceGroupHash.ps1"
+      working-directory: ./deployment/workflows
+      
+    - name: test that the AdsOpts variables have been set
+      shell: pwsh
+      env:
+        ENVIRONMENT_NAME: ${{ secrets.ENVIRONMENT_NAME }}
+        Secrets_WebAppAuthenticationSP_ClientId: ${{ secrets.WebAppAuthenticationSP_ClientId }}
+        Secrets_PowerBISP_ClientId: ${{ secrets.PowerBISP_ClientId }}
+        Secrets_PowerBISP_ClientSecret: ${{ secrets.PowerBISP_ClientSecret }}
+        Secrets_PowerBISP_TenantId: ${{ secrets.PowerBISP_TenantId }}
+      run:  echo "${{ env.Secrets_PowerBISP_TenantId }}" 
+    
+    - name: CI_1a_BuildCode
+      shell: pwsh
+      run: ./CI_1a_BuildCode.ps1 
+      working-directory: ./deployment/workflows
+
+    - name: Login via Az module
+      uses: azure/login@v1
+      with:
+        creds: ${{secrets.AZURE_CREDENTIALS}}
+        enable-AzPSSession: true 
+
+    - name: CD_1a_DeployServices
+      shell: pwsh
+      run: ./CD_1a_DeployServices.ps1 
+      working-directory: ./deployment/workflows
+
+    - name: CD_2b_ConfigureServices
+      shell: pwsh
+      run: ./CD_2b_ConfigureServices.ps1 
+      working-directory: ./deployment/workflows
